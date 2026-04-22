@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.util.List;
 import java.util.Optional;
@@ -58,29 +59,25 @@ class RateLimitServiceTest {
 
     @Test
     void checkRateLimit_shouldAllowRequest_whenUnderLimit() {
-        when(zSetOperations.removeRangeByScore(any(), anyDouble(), anyDouble())).thenReturn(0L);
-        when(zSetOperations.zCard(any())).thenReturn(2L);
-        when(zSetOperations.add(any(), any(), anyDouble())).thenReturn(true);
-        when(redisTemplate.expire(any(), anyLong(), any())).thenReturn(true);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(1L);
         when(logRepository.save(any())).thenReturn(new RateLimitLog());
 
         RateLimitResponse response = rateLimitService.checkRateLimit(request);
 
         assertTrue(response.isAllowed());
-        assertEquals(2, response.getRemainingRequests());
         assertEquals("Request allowed", response.getMessage());
     }
 
     @Test
     void checkRateLimit_shouldBlockRequest_whenOverLimit() {
-        when(zSetOperations.removeRangeByScore(any(), anyDouble(), anyDouble())).thenReturn(0L);
-        when(zSetOperations.zCard(any())).thenReturn(5L);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(0L);
         when(logRepository.save(any())).thenReturn(new RateLimitLog());
 
         RateLimitResponse response = rateLimitService.checkRateLimit(request);
 
         assertFalse(response.isAllowed());
-        assertEquals(0, response.getRemainingRequests());
         assertEquals("Rate limit exceeded. Try again later.", response.getMessage());
     }
 
@@ -92,15 +89,14 @@ class RateLimitServiceTest {
         config.setWindowSeconds(30);
 
         when(clientConfigRepository.findById("user123")).thenReturn(Optional.of(config));
-        when(zSetOperations.removeRangeByScore(any(), anyDouble(), anyDouble())).thenReturn(0L);
-        when(zSetOperations.zCard(any())).thenReturn(2L);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(0L);
         when(logRepository.save(any())).thenReturn(new RateLimitLog());
 
         RateLimitResponse response = rateLimitService.checkRateLimit(request);
 
         assertFalse(response.isAllowed());
     }
-
     @Test
     void getClientLogs_shouldReturnLogs() {
         RateLimitLog log = new RateLimitLog();

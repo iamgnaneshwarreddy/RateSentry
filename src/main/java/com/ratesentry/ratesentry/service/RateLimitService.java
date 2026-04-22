@@ -6,6 +6,7 @@ import com.ratesentry.ratesentry.repository.RateLimitLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import com.ratesentry.ratesentry.model.RateLimitRequest;
 import com.ratesentry.ratesentry.model.RateLimitResponse;
@@ -27,33 +28,49 @@ public class RateLimitService {
     @Autowired
     private ClientConfigRepository clientConfigRepository;
 
+    private static final String SLIDING_WINDOW_SCRIPT =
+            "local key = KEYS[1] " +
+                    "local now = tonumber(ARGV[1]) " +
+                    "local window = tonumber(ARGV[2]) " +
+                    "local max = tonumber(ARGV[3]) " +
+                    "local windowStart = now - window " +
+                    "redis.call('ZREMRANGEBYSCORE', key, 0, windowStart) " +
+                    "local count = redis.call('ZCARD', key) " +
+                    "if count < max then " +
+                    "  redis.call('ZADD', key, now, now) " +
+                    "  redis.call('EXPIRE', key, window) " +
+                    "  return 1 " +
+                    "else " +
+                    "  return 0 " +
+                    "end";
+
+
     public RateLimitResponse checkRateLimit(RateLimitRequest request) {
-        String key = "ratelimit:" + request.getClientId() + ":" + request.getEndpoint();
-        long now = Instant.now().getEpochSecond();
-        long windowStart = now - request.getWindowSeconds();
-
-        // Remove requests outside the window
-        redisTemplate.opsForZSet().removeRangeByScore(key, 0, windowStart);
-
         request = enrichWithConfig(request);
 
-        // Count requests in current window
-        Long count = redisTemplate.opsForZSet().zCard(key);
-        count = count == null ? 0 : count;
+        String key = "ratelimit:" + request.getClientId() + ":" + request.getEndpoint();
+        long now = Instant.now().getEpochSecond();
+
+        RedisScript<Long> script = RedisScript.of(SLIDING_WINDOW_SCRIPT, Long.class);
+
+        Long result = redisTemplate.execute(
+                script,
+                List.of(key),
+                String.valueOf(now),
+                String.valueOf(request.getWindowSeconds()),
+                String.valueOf(request.getMaxRequests())
+        );
+
+        boolean allowed = result != null && result == 1L;
 
         RateLimitResponse response = new RateLimitResponse();
 
-        if (count < request.getMaxRequests()) {
-            // Allow request — add current timestamp
-            redisTemplate.opsForZSet().add(key, String.valueOf(now), now);
-            redisTemplate.expire(key, request.getWindowSeconds(), TimeUnit.SECONDS);
-
+        if (allowed) {
             response.setAllowed(true);
-            response.setRemainingRequests((int)(request.getMaxRequests() - count - 1));
+            response.setRemainingRequests(request.getMaxRequests() - 1);
             response.setResetTimeSeconds(now + request.getWindowSeconds());
             response.setMessage("Request allowed");
         } else {
-            // Deny request
             response.setAllowed(false);
             response.setRemainingRequests(0);
             response.setResetTimeSeconds(now + request.getWindowSeconds());
@@ -62,7 +79,6 @@ public class RateLimitService {
 
         logRequest(request, response, "SLIDING_WINDOW");
         return response;
-
     }
     public RateLimitResponse checkTokenBucket(RateLimitRequest request) {
         String key = "tokenbucket:" + request.getClientId() + ":" + request.getEndpoint();
