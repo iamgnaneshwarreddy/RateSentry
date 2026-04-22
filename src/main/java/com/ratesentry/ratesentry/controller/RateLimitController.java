@@ -25,9 +25,20 @@ public class RateLimitController {
             return ResponseEntity.status(429).body(response);
         }
     }
+    @PostMapping("/check/tokenbucket")
+    public ResponseEntity<RateLimitResponse> checkTokenBucket(@RequestBody RateLimitRequest request) {
+        RateLimitResponse response = rateLimitService.checkTokenBucket(request);
+
+        if(response.isAllowed()) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.status(429).body(response);
+        }
+    }
 
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("RateSentry is running");
     }
+
 }
