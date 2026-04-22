@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ratesentry
+      - SPRING_DATASOURCE_USERNAME=ratesentry_user
+      - SPRING_DATASOURCE_PASSWORD=ratesentry123
+      - SPRING_DATA_REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=ratesentry
+      - POSTGRES_USER=ratesentry_user
+      - POSTGRES_PASSWORD=ratesentry123
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
