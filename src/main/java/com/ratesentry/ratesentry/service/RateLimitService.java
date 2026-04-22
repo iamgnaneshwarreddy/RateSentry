@@ -1,6 +1,7 @@
 package com.ratesentry.ratesentry.service;
 
 import com.ratesentry.ratesentry.model.RateLimitLog;
+import com.ratesentry.ratesentry.repository.ClientConfigRepository;
 import com.ratesentry.ratesentry.repository.RateLimitLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -23,6 +24,9 @@ public class RateLimitService {
     @Autowired
     private RateLimitLogRepository logRepository;
 
+    @Autowired
+    private ClientConfigRepository clientConfigRepository;
+
     public RateLimitResponse checkRateLimit(RateLimitRequest request) {
         String key = "ratelimit:" + request.getClientId() + ":" + request.getEndpoint();
         long now = Instant.now().getEpochSecond();
@@ -30,6 +34,8 @@ public class RateLimitService {
 
         // Remove requests outside the window
         redisTemplate.opsForZSet().removeRangeByScore(key, 0, windowStart);
+
+        request = enrichWithConfig(request);
 
         // Count requests in current window
         Long count = redisTemplate.opsForZSet().zCard(key);
@@ -66,9 +72,13 @@ public class RateLimitService {
 
         long now = Instant.now().getEpochSecond();
 
+        request = enrichWithConfig(request);
+
         int maxTokens = request.getMaxRequests();
         int refillRate = request.getMaxRequests(); // tokens per window
         int windowSeconds = request.getWindowSeconds();
+
+
 
         // Fetch current state
         String tokensStr = redisTemplate.opsForValue().get(tokensKey);
@@ -119,6 +129,15 @@ public class RateLimitService {
         log.setTimestamp(LocalDateTime.now());
         logRepository.save(log);
     }
+
+    private RateLimitRequest enrichWithConfig(RateLimitRequest request) {
+        clientConfigRepository.findById(request.getClientId()).ifPresent(config -> {
+            request.setMaxRequests(config.getMaxRequests());
+            request.setWindowSeconds(config.getWindowSeconds());
+        });
+        return request;
+    }
+
     public List<RateLimitLog> getClientLogs(String clientId) {
         return logRepository.findByClientId(clientId);
     }
