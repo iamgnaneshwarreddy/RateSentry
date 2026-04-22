@@ -1,5 +1,7 @@
 package com.ratesentry.ratesentry.service;
 
+import com.ratesentry.ratesentry.model.RateLimitLog;
+import com.ratesentry.ratesentry.repository.RateLimitLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -8,6 +10,8 @@ import com.ratesentry.ratesentry.model.RateLimitRequest;
 import com.ratesentry.ratesentry.model.RateLimitResponse;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -15,6 +19,9 @@ public class RateLimitService {
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+
+    @Autowired
+    private RateLimitLogRepository logRepository;
 
     public RateLimitResponse checkRateLimit(RateLimitRequest request) {
         String key = "ratelimit:" + request.getClientId() + ":" + request.getEndpoint();
@@ -47,7 +54,9 @@ public class RateLimitService {
             response.setMessage("Rate limit exceeded. Try again later.");
         }
 
+        logRequest(request, response, "SLIDING_WINDOW");
         return response;
+
     }
     public RateLimitResponse checkTokenBucket(RateLimitRequest request) {
         String key = "tokenbucket:" + request.getClientId() + ":" + request.getEndpoint();
@@ -98,7 +107,23 @@ public class RateLimitService {
             response.setResetTimeSeconds(now + windowSeconds);
             response.setMessage("Rate limit exceeded (Token Bucket)");
         }
-
+        logRequest(request, response, "TOKEN_BUCKET");
         return response;
+    }
+    private void logRequest(RateLimitRequest request, RateLimitResponse response, String algorithm) {
+        RateLimitLog log = new RateLimitLog();
+        log.setClientId(request.getClientId());
+        log.setEndpoint(request.getEndpoint());
+        log.setAllowed(response.isAllowed());
+        log.setAlgorithm(algorithm);
+        log.setTimestamp(LocalDateTime.now());
+        logRepository.save(log);
+    }
+    public List<RateLimitLog> getClientLogs(String clientId) {
+        return logRepository.findByClientId(clientId);
+    }
+
+    public List<RateLimitLog> getViolations() {
+        return logRepository.findByAllowedFalse();
     }
 }

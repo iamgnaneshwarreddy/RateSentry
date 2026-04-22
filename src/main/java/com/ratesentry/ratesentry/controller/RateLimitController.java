@@ -35,6 +35,15 @@ public class RateLimitController {
             return ResponseEntity.status(429).body(response);
         }
     }
+    @GetMapping("/analytics/{clientId}")
+    public ResponseEntity<?> getClientAnalytics(@PathVariable String clientId) {
+        return ResponseEntity.ok(rateLimitService.getClientLogs(clientId));
+    }
+
+    @GetMapping("/analytics/violations")
+    public ResponseEntity<?> getViolations() {
+        return ResponseEntity.ok(rateLimitService.getViolations());
+    }
 
     @GetMapping("/health")
     public ResponseEntity<String> health() {
