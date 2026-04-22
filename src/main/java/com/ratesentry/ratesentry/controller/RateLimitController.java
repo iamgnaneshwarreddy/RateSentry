@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import com.ratesentry.ratesentry.model.RateLimitRequest;
 import com.ratesentry.ratesentry.model.RateLimitResponse;
 import com.ratesentry.ratesentry.service.RateLimitService;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/ratelimit")
@@ -15,8 +16,9 @@ public class RateLimitController {
     @Autowired
     private RateLimitService rateLimitService;
 
+    
     @PostMapping("/check")
-    public ResponseEntity<RateLimitResponse> checkRateLimit(@RequestBody RateLimitRequest request) {
+    public ResponseEntity<RateLimitResponse> checkRateLimit(@Valid @RequestBody RateLimitRequest request) {
         RateLimitResponse response = rateLimitService.checkRateLimit(request);
 
         if(response.isAllowed()) {
